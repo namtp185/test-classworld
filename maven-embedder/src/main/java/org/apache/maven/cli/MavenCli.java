@@ -505,6 +505,7 @@ public class MavenCli {
 		Properties buildProperties = CLIReportingUtils.getBuildProperties();
 
 		String mavenVersion = buildProperties.getProperty(CLIReportingUtils.BUILD_VERSION_PROPERTY);
+		System.out.println(mavenVersion);
 		systemProperties.setProperty("maven.version", mavenVersion);
 
 		String mavenBuildVersion = CLIReportingUtils.createMavenVersionString(buildProperties);
