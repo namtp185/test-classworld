@@ -1,5 +1,5 @@
 package org.apache.maven;
 
 public interface Service {
-	public void doThing();
+	public void doThing(TransferObject tObj);
 }

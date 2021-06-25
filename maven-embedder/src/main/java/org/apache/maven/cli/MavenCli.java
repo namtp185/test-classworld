@@ -2,13 +2,10 @@ package org.apache.maven.cli;
 
 import static org.apache.maven.cli.ResolveFile.resolveFile;
 
-import java.io.BufferedInputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -16,10 +13,8 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
-import java.util.StringTokenizer;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.Option;
@@ -28,39 +23,20 @@ import org.apache.commons.cli.UnrecognizedOptionException;
 import org.apache.maven.BuildAbort;
 import org.apache.maven.Maven;
 import org.apache.maven.Service;
-import org.apache.maven.building.FileSource;
-import org.apache.maven.building.Problem;
-import org.apache.maven.building.Source;
-import org.apache.maven.cli.configuration.ConfigurationProcessor;
-import org.apache.maven.cli.configuration.SettingsXmlConfigurationProcessor;
+import org.apache.maven.TransferObject;
 import org.apache.maven.cli.event.DefaultEventSpyContext;
-import org.apache.maven.cli.event.ExecutionEventLogger;
-import org.apache.maven.cli.internal.BootstrapCoreExtensionManager;
-import org.apache.maven.cli.internal.extension.model.CoreExtension;
-import org.apache.maven.cli.internal.extension.model.io.xpp3.CoreExtensionsXpp3Reader;
 import org.apache.maven.cli.logging.Slf4jConfiguration;
 import org.apache.maven.cli.logging.Slf4jConfigurationFactory;
 import org.apache.maven.cli.logging.Slf4jLoggerManager;
 import org.apache.maven.cli.logging.Slf4jStdoutLogger;
 import org.apache.maven.cli.transfer.ConsoleMavenTransferListener;
-import org.apache.maven.cli.transfer.QuietMavenTransferListener;
 import org.apache.maven.cli.transfer.Slf4jMavenTransferListener;
 import org.apache.maven.eventspy.internal.EventSpyDispatcher;
-import org.apache.maven.execution.DefaultMavenExecutionRequest;
-import org.apache.maven.execution.ExecutionListener;
 import org.apache.maven.execution.MavenExecutionRequest;
-import org.apache.maven.execution.MavenExecutionRequestPopulator;
-import org.apache.maven.execution.scope.internal.MojoExecutionScopeModule;
-import org.apache.maven.extension.internal.CoreExports;
-import org.apache.maven.extension.internal.CoreExtensionEntry;
 import org.apache.maven.model.building.ModelProcessor;
 import org.apache.maven.properties.internal.EnvironmentUtils;
 import org.apache.maven.properties.internal.SystemProperties;
-import org.apache.maven.session.scope.internal.SessionScopeModule;
 import org.apache.maven.shared.utils.logging.MessageUtils;
-import org.apache.maven.toolchain.building.DefaultToolchainsBuildingRequest;
-import org.apache.maven.toolchain.building.ToolchainsBuilder;
-import org.apache.maven.toolchain.building.ToolchainsBuildingResult;
 import org.codehaus.plexus.ContainerConfiguration;
 import org.codehaus.plexus.DefaultContainerConfiguration;
 import org.codehaus.plexus.DefaultPlexusContainer;
@@ -71,8 +47,6 @@ import org.codehaus.plexus.classworlds.realm.ClassRealm;
 import org.codehaus.plexus.classworlds.realm.NoSuchRealmException;
 import org.codehaus.plexus.component.repository.exception.ComponentLookupException;
 import org.codehaus.plexus.logging.LoggerManager;
-import org.codehaus.plexus.util.StringUtils;
-import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
 import org.eclipse.aether.transfer.TransferListener;
 import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
@@ -119,10 +93,6 @@ public class MavenCli
     public static final File DEFAULT_GLOBAL_TOOLCHAINS_FILE =
         new File( System.getProperty( "maven.conf" ), "toolchains.xml" );
 
-    private static final String EXT_CLASS_PATH = "maven.ext.class.path";
-
-    private static final String EXTENSIONS_FILENAME = ".mvn/extensions.xml";
-
     private static final String MVN_MAVEN_CONFIG = ".mvn/maven.config";
 
     public static final String STYLE_COLOR_PROPERTY = "style.color";
@@ -137,19 +107,9 @@ public class MavenCli
 
     private EventSpyDispatcher eventSpyDispatcher;
 
-    private ModelProcessor modelProcessor;
-
     private Maven maven;
     
     private Service service;
-
-    private MavenExecutionRequestPopulator executionRequestPopulator;
-
-    private ToolchainsBuilder toolchainsBuilder;
-
-//    private DefaultSecDispatcher dispatcher;
-
-    private Map<String, ConfigurationProcessor> configurationProcessors;
 
     public MavenCli()
     {
@@ -265,13 +225,6 @@ public class MavenCli
             logging( cliRequest );
             version( cliRequest );
             localContainer = container( cliRequest );
-//            commands( cliRequest );
-//            configure( cliRequest );
-//            toolchains( cliRequest );
-//            populateRequest( cliRequest );
-//            encryption( cliRequest );
-//            repository( cliRequest );
-//            return execute( cliRequest );
             return 0;
         }
         catch ( ExitException e )
@@ -559,29 +512,11 @@ public class MavenCli
             coreRealm = cliRequest.classWorld.getRealms().iterator().next();
         }
 
-        List<File> extClassPath = parseExtClasspath( cliRequest );
-
-        CoreExtensionEntry coreEntry = CoreExtensionEntry.discoverFrom( coreRealm );
-        List<CoreExtensionEntry> extensions =
-            loadCoreExtensions( cliRequest, coreRealm, coreEntry.getExportedArtifacts() );
-
-        ClassRealm containerRealm = setupContainerRealm( cliRequest.classWorld, coreRealm, extClassPath, extensions );
         coreRealm.display();
-        containerRealm.display();
 
         ContainerConfiguration cc = new DefaultContainerConfiguration().setClassWorld( cliRequest.classWorld )
-            .setRealm( containerRealm ).setClassPathScanning( PlexusConstants.SCANNING_INDEX ).setAutoWiring( true )
+            .setRealm( coreRealm ).setClassPathScanning( PlexusConstants.SCANNING_INDEX ).setAutoWiring( true )
             .setJSR250Lifecycle( true ).setName( "maven" );
-
-        Set<String> exportedArtifacts = new HashSet<>( coreEntry.getExportedArtifacts() );
-        Set<String> exportedPackages = new HashSet<>( coreEntry.getExportedPackages() );
-        for ( CoreExtensionEntry extension : extensions )
-        {
-            exportedArtifacts.addAll( extension.getExportedArtifacts() );
-            exportedPackages.addAll( extension.getExportedPackages() );
-        }
-
-        final CoreExports exports = new CoreExports( containerRealm, exportedArtifacts, exportedPackages );
 
         DefaultPlexusContainer container = new DefaultPlexusContainer( cc, new AbstractModule()
         {
@@ -589,7 +524,7 @@ public class MavenCli
             protected void configure()
             {
                 bind( ILoggerFactory.class ).toInstance( slf4jLoggerFactory );
-                bind( CoreExports.class ).toInstance( exports );
+//                bind( CoreExports.class ).toInstance( exports );
             }
         } );
 
@@ -598,12 +533,6 @@ public class MavenCli
         Thread.currentThread().setContextClassLoader( container.getContainerRealm() );
 
         container.setLoggerManager( plexusLoggerManager );
-
-        for ( CoreExtensionEntry extension : extensions )
-        {
-            container.discoverComponents( extension.getClassRealm(), new SessionScopeModule( container ),
-                                          new MojoExecutionScopeModule( container ) );
-        }
 
         customizeContainer( container );
 
@@ -628,254 +557,11 @@ public class MavenCli
         maven = container.lookup( Maven.class );
         
         service = container.lookup( Service.class );
-        service.doThing();
-
-//        executionRequestPopulator = container.lookup( MavenExecutionRequestPopulator.class );
-//
-//        modelProcessor = createModelProcessor( container );
-//
-//        configurationProcessors = container.lookupMap( ConfigurationProcessor.class );
-//
-//        toolchainsBuilder = container.lookup( ToolchainsBuilder.class );
-//
-//        dispatcher = (DefaultSecDispatcher) container.lookup( SecDispatcher.class, "maven" );
+        
+        TransferObject tObj = new TransferObject("hoho");
+        service.doThing(tObj);
 
         return container;
-    }
-
-    private List<CoreExtensionEntry> loadCoreExtensions( CliRequest cliRequest, ClassRealm containerRealm,
-                                                         Set<String> providedArtifacts )
-    {
-        if ( cliRequest.multiModuleProjectDirectory == null )
-        {
-            return Collections.emptyList();
-        }
-
-        File extensionsFile = new File( cliRequest.multiModuleProjectDirectory, EXTENSIONS_FILENAME );
-        if ( !extensionsFile.isFile() )
-        {
-            return Collections.emptyList();
-        }
-
-        try
-        {
-            List<CoreExtension> extensions = readCoreExtensionsDescriptor( extensionsFile );
-            if ( extensions.isEmpty() )
-            {
-                return Collections.emptyList();
-            }
-
-            ContainerConfiguration cc = new DefaultContainerConfiguration() //
-                .setClassWorld( cliRequest.classWorld ) //
-                .setRealm( containerRealm ) //
-                .setClassPathScanning( PlexusConstants.SCANNING_INDEX ) //
-                .setAutoWiring( true ) //
-                .setJSR250Lifecycle( true ) //
-                .setName( "maven" );
-
-            DefaultPlexusContainer container = new DefaultPlexusContainer( cc, new AbstractModule()
-            {
-                @Override
-                protected void configure()
-                {
-                    bind( ILoggerFactory.class ).toInstance( slf4jLoggerFactory );
-                }
-            } );
-
-            try
-            {
-                container.setLookupRealm( null );
-
-                container.setLoggerManager( plexusLoggerManager );
-
-                container.getLoggerManager().setThresholds( cliRequest.request.getLoggingLevel() );
-
-                Thread.currentThread().setContextClassLoader( container.getContainerRealm() );
-
-                executionRequestPopulator = container.lookup( MavenExecutionRequestPopulator.class );
-
-                configurationProcessors = container.lookupMap( ConfigurationProcessor.class );
-
-                configure( cliRequest );
-
-                MavenExecutionRequest request = DefaultMavenExecutionRequest.copy( cliRequest.request );
-
-                request = populateRequest( cliRequest, request );
-
-                request = executionRequestPopulator.populateDefaults( request );
-
-                BootstrapCoreExtensionManager resolver = container.lookup( BootstrapCoreExtensionManager.class );
-
-                return Collections.unmodifiableList( resolver.loadCoreExtensions( request, providedArtifacts,
-                                                                                  extensions ) );
-
-            }
-            finally
-            {
-                executionRequestPopulator = null;
-                container.dispose();
-            }
-        }
-        catch ( RuntimeException e )
-        {
-            // runtime exceptions are most likely bugs in maven, let them bubble up to the user
-            throw e;
-        }
-        catch ( Exception e )
-        {
-            slf4jLogger.warn( "Failed to read extensions descriptor {}: {}", extensionsFile, e.getMessage() );
-        }
-        return Collections.emptyList();
-    }
-
-    private List<CoreExtension> readCoreExtensionsDescriptor( File extensionsFile )
-        throws IOException, XmlPullParserException
-    {
-        CoreExtensionsXpp3Reader parser = new CoreExtensionsXpp3Reader();
-
-        try ( InputStream is = new BufferedInputStream( new FileInputStream( extensionsFile ) ) )
-        {
-
-            return parser.read( is ).getExtensions();
-        }
-
-    }
-
-    private ClassRealm setupContainerRealm( ClassWorld classWorld, ClassRealm coreRealm, List<File> extClassPath,
-                                            List<CoreExtensionEntry> extensions )
-        throws Exception
-    {
-        if ( !extClassPath.isEmpty() || !extensions.isEmpty() )
-        {
-            ClassRealm extRealm = classWorld.newRealm( "maven.ext", null );
-
-            extRealm.setParentRealm( coreRealm );
-
-            slf4jLogger.debug( "Populating class realm {}", extRealm.getId() );
-
-            for ( File file : extClassPath )
-            {
-                slf4jLogger.debug( "  Included {}", file );
-
-                extRealm.addURL( file.toURI().toURL() );
-            }
-
-            for ( CoreExtensionEntry entry : reverse( extensions ) )
-            {
-                Set<String> exportedPackages = entry.getExportedPackages();
-                ClassRealm realm = entry.getClassRealm();
-                for ( String exportedPackage : exportedPackages )
-                {
-                    extRealm.importFrom( realm, exportedPackage );
-                }
-                if ( exportedPackages.isEmpty() )
-                {
-                    // sisu uses realm imports to establish component visibility
-                    extRealm.importFrom( realm, realm.getId() );
-                }
-            }
-
-            return extRealm;
-        }
-
-        return coreRealm;
-    }
-
-    private static <T> List<T> reverse( List<T> list )
-    {
-        List<T> copy = new ArrayList<>( list );
-        Collections.reverse( copy );
-        return copy;
-    }
-
-    private List<File> parseExtClasspath( CliRequest cliRequest )
-    {
-        String extClassPath = cliRequest.userProperties.getProperty( EXT_CLASS_PATH );
-        if ( extClassPath == null )
-        {
-            extClassPath = cliRequest.systemProperties.getProperty( EXT_CLASS_PATH );
-        }
-
-        List<File> jars = new ArrayList<>();
-
-        if ( StringUtils.isNotEmpty( extClassPath ) )
-        {
-            for ( String jar : StringUtils.split( extClassPath, File.pathSeparator ) )
-            {
-                File file = resolveFile( new File( jar ), cliRequest.workingDirectory );
-
-                slf4jLogger.debug( "  Included {}", file );
-
-                jars.add( file );
-            }
-        }
-
-        return jars;
-    }
-
-    private void configure( CliRequest cliRequest )
-        throws Exception
-    {
-        //
-        // This is not ideal but there are events specifically for configuration from the CLI which I don't
-        // believe are really valid but there are ITs which assert the right events are published so this
-        // needs to be supported so the EventSpyDispatcher needs to be put in the CliRequest so that
-        // it can be accessed by configuration processors.
-        //
-        cliRequest.request.setEventSpyDispatcher( eventSpyDispatcher );
-
-        //
-        // We expect at most 2 implementations to be available. The SettingsXmlConfigurationProcessor implementation
-        // is always available in the core and likely always will be, but we may have another ConfigurationProcessor
-        // present supplied by the user. The rule is that we only allow the execution of one ConfigurationProcessor.
-        // If there is more than one then we execute the one supplied by the user, otherwise we execute the
-        // the default SettingsXmlConfigurationProcessor.
-        //
-        int userSuppliedConfigurationProcessorCount = configurationProcessors.size() - 1;
-
-        if ( userSuppliedConfigurationProcessorCount == 0 )
-        {
-            //
-            // Our settings.xml source is historically how we have configured Maven from the CLI so we are going to
-            // have to honour its existence forever. So let's run it.
-            //
-            configurationProcessors.get( SettingsXmlConfigurationProcessor.HINT ).process( cliRequest );
-        }
-        else if ( userSuppliedConfigurationProcessorCount == 1 )
-        {
-            //
-            // Run the user supplied ConfigurationProcessor
-            //
-            for ( Entry<String, ConfigurationProcessor> entry : configurationProcessors.entrySet() )
-            {
-                String hint = entry.getKey();
-                if ( !hint.equals( SettingsXmlConfigurationProcessor.HINT ) )
-                {
-                    ConfigurationProcessor configurationProcessor = entry.getValue();
-                    configurationProcessor.process( cliRequest );
-                }
-            }
-        }
-        else if ( userSuppliedConfigurationProcessorCount > 1 )
-        {
-            //
-            // There are too many ConfigurationProcessors so we don't know which one to run so report the error.
-            //
-            StringBuilder sb = new StringBuilder(
-                String.format( "\nThere can only be one user supplied ConfigurationProcessor, there are %s:\n\n",
-                               userSuppliedConfigurationProcessorCount ) );
-            for ( Entry<String, ConfigurationProcessor> entry : configurationProcessors.entrySet() )
-            {
-                String hint = entry.getKey();
-                if ( !hint.equals( SettingsXmlConfigurationProcessor.HINT ) )
-                {
-                    ConfigurationProcessor configurationProcessor = entry.getValue();
-                    sb.append( String.format( "%s\n", configurationProcessor.getClass().getName() ) );
-                }
-            }
-            sb.append( "\n" );
-            throw new Exception( sb.toString() );
-        }
     }
 
     void toolchains( CliRequest cliRequest )
@@ -922,362 +608,8 @@ public class MavenCli
         cliRequest.request.setGlobalToolchainsFile( globalToolchainsFile );
         cliRequest.request.setUserToolchainsFile( userToolchainsFile );
 
-        DefaultToolchainsBuildingRequest toolchainsRequest = new DefaultToolchainsBuildingRequest();
-        if ( globalToolchainsFile.isFile() )
-        {
-            toolchainsRequest.setGlobalToolchainsSource( new FileSource( globalToolchainsFile ) );
-        }
-        if ( userToolchainsFile.isFile() )
-        {
-            toolchainsRequest.setUserToolchainsSource( new FileSource( userToolchainsFile ) );
-        }
-
-        eventSpyDispatcher.onEvent( toolchainsRequest );
-
-        slf4jLogger.debug( "Reading global toolchains from {}",
-                getLocation( toolchainsRequest.getGlobalToolchainsSource(), globalToolchainsFile ) );
-        slf4jLogger.debug( "Reading user toolchains from {}",
-                getLocation( toolchainsRequest.getUserToolchainsSource(), userToolchainsFile ) );
-
-        ToolchainsBuildingResult toolchainsResult = toolchainsBuilder.build( toolchainsRequest );
-
-        eventSpyDispatcher.onEvent( toolchainsResult );
-
-        executionRequestPopulator.populateFromToolchains( cliRequest.request,
-                                                          toolchainsResult.getEffectiveToolchains() );
-
-        if ( !toolchainsResult.getProblems().isEmpty() && slf4jLogger.isWarnEnabled() )
-        {
-            slf4jLogger.warn( "" );
-            slf4jLogger.warn( "Some problems were encountered while building the effective toolchains" );
-
-            for ( Problem problem : toolchainsResult.getProblems() )
-            {
-                slf4jLogger.warn( "{} @ {}", problem.getMessage(), problem.getLocation() );
-            }
-
-            slf4jLogger.warn( "" );
-        }
     }
-
-    private Object getLocation( Source source, File defaultLocation )
-    {
-        if ( source != null )
-        {
-            return source.getLocation();
-        }
-        return defaultLocation;
-    }
-
-    @SuppressWarnings( "checkstyle:methodlength" )
-    private MavenExecutionRequest populateRequest( CliRequest cliRequest, MavenExecutionRequest request )
-    {
-        CommandLine commandLine = cliRequest.commandLine;
-        String workingDirectory = cliRequest.workingDirectory;
-        boolean quiet = cliRequest.quiet;
-        boolean showErrors = cliRequest.showErrors;
-
-        String[] deprecatedOptions = { "up", "npu", "cpu", "npr" };
-        for ( String deprecatedOption : deprecatedOptions )
-        {
-            if ( commandLine.hasOption( deprecatedOption ) )
-            {
-                slf4jLogger.warn( "Command line option -{} is deprecated and will be removed in future Maven versions.",
-                        deprecatedOption );
-            }
-        }
-
-        // ----------------------------------------------------------------------
-        // Now that we have everything that we need we will fire up plexus and
-        // bring the maven component to life for use.
-        // ----------------------------------------------------------------------
-
-        if ( commandLine.hasOption( CLIManager.BATCH_MODE ) )
-        {
-            request.setInteractiveMode( false );
-        }
-
-        boolean noSnapshotUpdates = false;
-        if ( commandLine.hasOption( CLIManager.SUPRESS_SNAPSHOT_UPDATES ) )
-        {
-            noSnapshotUpdates = true;
-        }
-
-        // ----------------------------------------------------------------------
-        //
-        // ----------------------------------------------------------------------
-
-        List<String> goals = commandLine.getArgList();
-
-        boolean recursive = true;
-
-        // this is the default behavior.
-        String reactorFailureBehaviour = MavenExecutionRequest.REACTOR_FAIL_FAST;
-
-        if ( commandLine.hasOption( CLIManager.NON_RECURSIVE ) )
-        {
-            recursive = false;
-        }
-
-        if ( commandLine.hasOption( CLIManager.FAIL_FAST ) )
-        {
-            reactorFailureBehaviour = MavenExecutionRequest.REACTOR_FAIL_FAST;
-        }
-        else if ( commandLine.hasOption( CLIManager.FAIL_AT_END ) )
-        {
-            reactorFailureBehaviour = MavenExecutionRequest.REACTOR_FAIL_AT_END;
-        }
-        else if ( commandLine.hasOption( CLIManager.FAIL_NEVER ) )
-        {
-            reactorFailureBehaviour = MavenExecutionRequest.REACTOR_FAIL_NEVER;
-        }
-
-        if ( commandLine.hasOption( CLIManager.OFFLINE ) )
-        {
-            request.setOffline( true );
-        }
-
-        boolean updateSnapshots = false;
-
-        if ( commandLine.hasOption( CLIManager.UPDATE_SNAPSHOTS ) )
-        {
-            updateSnapshots = true;
-        }
-
-        String globalChecksumPolicy = null;
-
-        if ( commandLine.hasOption( CLIManager.CHECKSUM_FAILURE_POLICY ) )
-        {
-            globalChecksumPolicy = MavenExecutionRequest.CHECKSUM_POLICY_FAIL;
-        }
-        else if ( commandLine.hasOption( CLIManager.CHECKSUM_WARNING_POLICY ) )
-        {
-            globalChecksumPolicy = MavenExecutionRequest.CHECKSUM_POLICY_WARN;
-        }
-
-        File baseDirectory = new File( workingDirectory, "" ).getAbsoluteFile();
-
-        // ----------------------------------------------------------------------
-        // Profile Activation
-        // ----------------------------------------------------------------------
-
-        List<String> activeProfiles = new ArrayList<>();
-
-        List<String> inactiveProfiles = new ArrayList<>();
-
-        if ( commandLine.hasOption( CLIManager.ACTIVATE_PROFILES ) )
-        {
-            String[] profileOptionValues = commandLine.getOptionValues( CLIManager.ACTIVATE_PROFILES );
-            if ( profileOptionValues != null )
-            {
-                for ( String profileOptionValue : profileOptionValues )
-                {
-                    StringTokenizer profileTokens = new StringTokenizer( profileOptionValue, "," );
-
-                    while ( profileTokens.hasMoreTokens() )
-                    {
-                        String profileAction = profileTokens.nextToken().trim();
-
-                        if ( profileAction.startsWith( "-" ) || profileAction.startsWith( "!" ) )
-                        {
-                            inactiveProfiles.add( profileAction.substring( 1 ) );
-                        }
-                        else if ( profileAction.startsWith( "+" ) )
-                        {
-                            activeProfiles.add( profileAction.substring( 1 ) );
-                        }
-                        else
-                        {
-                            activeProfiles.add( profileAction );
-                        }
-                    }
-                }
-            }
-        }
-
-        TransferListener transferListener;
-
-        if ( quiet || cliRequest.commandLine.hasOption( CLIManager.NO_TRANSFER_PROGRESS ) )
-        {
-            transferListener = new QuietMavenTransferListener();
-        }
-        else if ( request.isInteractiveMode() && !cliRequest.commandLine.hasOption( CLIManager.LOG_FILE ) )
-        {
-            //
-            // If we're logging to a file then we don't want the console transfer listener as it will spew
-            // download progress all over the place
-            //
-            transferListener = getConsoleTransferListener( cliRequest.commandLine.hasOption( CLIManager.DEBUG ) );
-        }
-        else
-        {
-            transferListener = getBatchTransferListener();
-        }
-
-        ExecutionListener executionListener = new ExecutionEventLogger();
-        if ( eventSpyDispatcher != null )
-        {
-            executionListener = eventSpyDispatcher.chainListener( executionListener );
-        }
-
-        String alternatePomFile = null;
-        if ( commandLine.hasOption( CLIManager.ALTERNATE_POM_FILE ) )
-        {
-            alternatePomFile = commandLine.getOptionValue( CLIManager.ALTERNATE_POM_FILE );
-        }
-
-        request.setBaseDirectory( baseDirectory ).setGoals( goals ).setSystemProperties(
-            cliRequest.systemProperties ).setUserProperties( cliRequest.userProperties ).setReactorFailureBehavior(
-            reactorFailureBehaviour ) // default: fail fast
-            .setRecursive( recursive ) // default: true
-            .setShowErrors( showErrors ) // default: false
-            .addActiveProfiles( activeProfiles ) // optional
-            .addInactiveProfiles( inactiveProfiles ) // optional
-            .setExecutionListener( executionListener ).setTransferListener(
-            transferListener ) // default: batch mode which goes along with interactive
-            .setUpdateSnapshots( updateSnapshots ) // default: false
-            .setNoSnapshotUpdates( noSnapshotUpdates ) // default: false
-            .setGlobalChecksumPolicy( globalChecksumPolicy ) // default: warn
-            .setMultiModuleProjectDirectory( cliRequest.multiModuleProjectDirectory );
-
-        if ( alternatePomFile != null )
-        {
-            File pom = resolveFile( new File( alternatePomFile ), workingDirectory );
-            if ( pom.isDirectory() )
-            {
-                pom = new File( pom, "pom.xml" );
-            }
-
-            request.setPom( pom );
-        }
-        else if ( modelProcessor != null )
-        {
-            File pom = modelProcessor.locatePom( baseDirectory );
-
-            if ( pom.isFile() )
-            {
-                request.setPom( pom );
-            }
-        }
-
-        if ( ( request.getPom() != null ) && ( request.getPom().getParentFile() != null ) )
-        {
-            request.setBaseDirectory( request.getPom().getParentFile() );
-        }
-
-        if ( commandLine.hasOption( CLIManager.RESUME_FROM ) )
-        {
-            request.setResumeFrom( commandLine.getOptionValue( CLIManager.RESUME_FROM ) );
-        }
-
-        if ( commandLine.hasOption( CLIManager.PROJECT_LIST ) )
-        {
-            String[] projectOptionValues = commandLine.getOptionValues( CLIManager.PROJECT_LIST );
-
-            List<String> inclProjects = new ArrayList<>();
-            List<String> exclProjects = new ArrayList<>();
-
-            if ( projectOptionValues != null )
-            {
-                for ( String projectOptionValue : projectOptionValues )
-                {
-                    StringTokenizer projectTokens = new StringTokenizer( projectOptionValue, "," );
-
-                    while ( projectTokens.hasMoreTokens() )
-                    {
-                        String projectAction = projectTokens.nextToken().trim();
-
-                        if ( projectAction.startsWith( "-" ) || projectAction.startsWith( "!" ) )
-                        {
-                            exclProjects.add( projectAction.substring( 1 ) );
-                        }
-                        else if ( projectAction.startsWith( "+" ) )
-                        {
-                            inclProjects.add( projectAction.substring( 1 ) );
-                        }
-                        else
-                        {
-                            inclProjects.add( projectAction );
-                        }
-                    }
-                }
-            }
-
-            request.setSelectedProjects( inclProjects );
-            request.setExcludedProjects( exclProjects );
-        }
-
-        if ( commandLine.hasOption( CLIManager.ALSO_MAKE ) && !commandLine.hasOption(
-            CLIManager.ALSO_MAKE_DEPENDENTS ) )
-        {
-            request.setMakeBehavior( MavenExecutionRequest.REACTOR_MAKE_UPSTREAM );
-        }
-        else if ( !commandLine.hasOption( CLIManager.ALSO_MAKE ) && commandLine.hasOption(
-            CLIManager.ALSO_MAKE_DEPENDENTS ) )
-        {
-            request.setMakeBehavior( MavenExecutionRequest.REACTOR_MAKE_DOWNSTREAM );
-        }
-        else if ( commandLine.hasOption( CLIManager.ALSO_MAKE ) && commandLine.hasOption(
-            CLIManager.ALSO_MAKE_DEPENDENTS ) )
-        {
-            request.setMakeBehavior( MavenExecutionRequest.REACTOR_MAKE_BOTH );
-        }
-
-        String localRepoProperty = request.getUserProperties().getProperty( MavenCli.LOCAL_REPO_PROPERTY );
-
-        if ( localRepoProperty == null )
-        {
-            localRepoProperty = request.getSystemProperties().getProperty( MavenCli.LOCAL_REPO_PROPERTY );
-        }
-
-        if ( localRepoProperty != null )
-        {
-            request.setLocalRepositoryPath( localRepoProperty );
-        }
-
-        request.setCacheNotFound( true );
-        request.setCacheTransferError( false );
-
-        //
-        // Builder, concurrency and parallelism
-        //
-        // We preserve the existing methods for builder selection which is to look for various inputs in the threading
-        // configuration. We don't have an easy way to allow a pluggable builder to provide its own configuration
-        // parameters but this is sufficient for now. Ultimately we want components like Builders to provide a way to
-        // extend the command line to accept its own configuration parameters.
-        //
-        final String threadConfiguration = commandLine.hasOption( CLIManager.THREADS )
-            ? commandLine.getOptionValue( CLIManager.THREADS )
-            : null;
-
-        if ( threadConfiguration != null )
-        {
-            //
-            // Default to the standard multithreaded builder
-            //
-            request.setBuilderId( "multithreaded" );
-
-            if ( threadConfiguration.contains( "C" ) )
-            {
-                request.setDegreeOfConcurrency( calculateDegreeOfConcurrencyWithCoreMultiplier( threadConfiguration ) );
-            }
-            else
-            {
-                request.setDegreeOfConcurrency( Integer.valueOf( threadConfiguration ) );
-            }
-        }
-
-        //
-        // Allow the builder to be overridden by the user if requested. The builders are now pluggable.
-        //
-        if ( commandLine.hasOption( CLIManager.BUILDER ) )
-        {
-            request.setBuilderId( commandLine.getOptionValue( CLIManager.BUILDER ) );
-        }
-
-        return request;
-    }
-
+    
     int calculateDegreeOfConcurrencyWithCoreMultiplier( String threadConfiguration )
     {
         int procs = Runtime.getRuntime().availableProcessors();

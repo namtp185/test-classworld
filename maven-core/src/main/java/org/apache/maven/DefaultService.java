@@ -7,7 +7,8 @@ import org.codehaus.plexus.component.annotations.Component;
  */
 @Component(role = Service.class)
 public class DefaultService implements Service {
-	public void doThing() {
-		System.out.println("Service start!");
+	public void doThing(TransferObject tObj) {
+		System.out.println(String.format("Service %s start!", this.getClass().getName().toString()));
+		System.out.println(String.format("Message from tranfer object: %s", tObj.getMessage()));
 	}
 }
