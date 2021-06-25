@@ -81,6 +81,7 @@ under the License.
   </properties>
 
   <modules>
+    <!--
     <module>maven-plugin-api</module>
     <module>maven-builder-support</module>
     <module>maven-model</module>
@@ -94,6 +95,9 @@ under the License.
     <module>maven-slf4j-provider</module>
     <module>maven-embedder</module>
     <module>maven-compat</module>
+    <module>apache-maven</module>
+    -->
+    <module>maven-embedder</module>
     <module>apache-maven</module>
   </modules>
 
