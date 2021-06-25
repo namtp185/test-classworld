@@ -1,31 +1,31 @@
 package org.apache.maven.cli;
 
-/*
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
- */
+import static org.apache.maven.cli.ResolveFile.resolveFile;
 
-import com.google.inject.AbstractModule;
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.PrintStream;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Properties;
+import java.util.Set;
+import java.util.StringTokenizer;
+
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.ParseException;
 import org.apache.commons.cli.UnrecognizedOptionException;
 import org.apache.maven.BuildAbort;
-import org.apache.maven.InternalErrorException;
 import org.apache.maven.Maven;
 import org.apache.maven.Service;
 import org.apache.maven.building.FileSource;
@@ -46,25 +46,17 @@ import org.apache.maven.cli.transfer.ConsoleMavenTransferListener;
 import org.apache.maven.cli.transfer.QuietMavenTransferListener;
 import org.apache.maven.cli.transfer.Slf4jMavenTransferListener;
 import org.apache.maven.eventspy.internal.EventSpyDispatcher;
-import org.apache.maven.exception.DefaultExceptionHandler;
-import org.apache.maven.exception.ExceptionHandler;
-import org.apache.maven.exception.ExceptionSummary;
 import org.apache.maven.execution.DefaultMavenExecutionRequest;
 import org.apache.maven.execution.ExecutionListener;
 import org.apache.maven.execution.MavenExecutionRequest;
-import org.apache.maven.execution.MavenExecutionRequestPopulationException;
 import org.apache.maven.execution.MavenExecutionRequestPopulator;
-import org.apache.maven.execution.MavenExecutionResult;
 import org.apache.maven.execution.scope.internal.MojoExecutionScopeModule;
 import org.apache.maven.extension.internal.CoreExports;
 import org.apache.maven.extension.internal.CoreExtensionEntry;
-import org.apache.maven.lifecycle.LifecycleExecutionException;
 import org.apache.maven.model.building.ModelProcessor;
-import org.apache.maven.project.MavenProject;
 import org.apache.maven.properties.internal.EnvironmentUtils;
 import org.apache.maven.properties.internal.SystemProperties;
 import org.apache.maven.session.scope.internal.SessionScopeModule;
-import org.apache.maven.shared.utils.logging.MessageBuilder;
 import org.apache.maven.shared.utils.logging.MessageUtils;
 import org.apache.maven.toolchain.building.DefaultToolchainsBuildingRequest;
 import org.apache.maven.toolchain.building.ToolchainsBuilder;
@@ -85,37 +77,27 @@ import org.eclipse.aether.transfer.TransferListener;
 import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.sonatype.plexus.components.cipher.DefaultPlexusCipher;
-import org.sonatype.plexus.components.sec.dispatcher.DefaultSecDispatcher;
-import org.sonatype.plexus.components.sec.dispatcher.SecDispatcher;
-import org.sonatype.plexus.components.sec.dispatcher.SecUtil;
-import org.sonatype.plexus.components.sec.dispatcher.model.SettingsSecurity;
 
-import java.io.BufferedInputStream;
-import java.io.Console;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.PrintStream;
-import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Properties;
-import java.util.Set;
-import java.util.StringTokenizer;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *  http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 
-import static org.apache.maven.cli.ResolveFile.resolveFile;
-import static org.apache.maven.shared.utils.logging.MessageUtils.buffer;
+import com.google.inject.AbstractModule;
 
 // TODO push all common bits back to plexus cli and prepare for transition to Guice. We don't need 50 ways to make CLIs
 
