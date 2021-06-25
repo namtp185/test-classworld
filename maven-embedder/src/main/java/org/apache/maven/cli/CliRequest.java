@@ -23,8 +23,6 @@ import java.io.File;
 import java.util.Properties;
 
 import org.apache.commons.cli.CommandLine;
-import org.apache.maven.execution.DefaultMavenExecutionRequest;
-import org.apache.maven.execution.MavenExecutionRequest;
 import org.codehaus.plexus.classworlds.ClassWorld;
 
 /**
@@ -52,13 +50,12 @@ public class CliRequest
 
     Properties systemProperties = new Properties();
 
-    MavenExecutionRequest request;
+//    MavenExecutionRequest request;
 
     CliRequest( String[] args, ClassWorld classWorld )
     {
         this.args = args;
         this.classWorld = classWorld;
-        this.request = new DefaultMavenExecutionRequest();
     }
 
     public String[] getArgs()
@@ -109,11 +106,6 @@ public class CliRequest
     public Properties getSystemProperties()
     {
         return systemProperties;
-    }
-
-    public MavenExecutionRequest getRequest()
-    {
-        return request;
     }
 
     public void setUserProperties( Properties properties ) 

@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
@@ -21,14 +20,11 @@ import org.apache.commons.cli.Option;
 import org.apache.commons.cli.ParseException;
 import org.apache.commons.cli.UnrecognizedOptionException;
 import org.apache.maven.BuildAbort;
-import org.apache.maven.cli.event.DefaultEventSpyContext;
 import org.apache.maven.cli.internal.DefaultService2;
 import org.apache.maven.cli.logging.Slf4jConfiguration;
 import org.apache.maven.cli.logging.Slf4jConfigurationFactory;
 import org.apache.maven.cli.logging.Slf4jLoggerManager;
 import org.apache.maven.cli.logging.Slf4jStdoutLogger;
-import org.apache.maven.cli.transfer.ConsoleMavenTransferListener;
-import org.apache.maven.cli.transfer.Slf4jMavenTransferListener;
 import org.apache.maven.properties.internal.EnvironmentUtils;
 import org.apache.maven.properties.internal.SystemProperties;
 import org.apache.maven.shared.utils.logging.MessageUtils;
@@ -41,7 +37,6 @@ import org.codehaus.plexus.classworlds.ClassWorld;
 import org.codehaus.plexus.classworlds.realm.ClassRealm;
 import org.codehaus.plexus.classworlds.realm.NoSuchRealmException;
 import org.codehaus.plexus.logging.LoggerManager;
-import org.eclipse.aether.transfer.TransferListener;
 import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -416,7 +411,6 @@ public class MavenCli {
 			@Override
 			protected void configure() {
 				bind(ILoggerFactory.class).toInstance(slf4jLoggerFactory);
-				// bind( CoreExports.class ).toInstance( exports );
 			}
 		});
 
@@ -427,16 +421,6 @@ public class MavenCli {
 		container.setLoggerManager(plexusLoggerManager);
 
 		customizeContainer(container);
-
-		container.getLoggerManager().setThresholds(cliRequest.request.getLoggingLevel());
-
-		DefaultEventSpyContext eventSpyContext = new DefaultEventSpyContext();
-		Map<String, Object> data = eventSpyContext.getData();
-		data.put("plexus", container);
-		data.put("workingDirectory", cliRequest.workingDirectory);
-		data.put("systemProperties", cliRequest.systemProperties);
-		data.put("userProperties", cliRequest.userProperties);
-		data.put("versionProperties", CLIReportingUtils.getBuildProperties());
 
 		// refresh logger in case container got customized by spy
 		slf4jLogger = slf4jLoggerFactory.getLogger(this.getClass().getName());
@@ -478,8 +462,8 @@ public class MavenCli {
 			globalToolchainsFile = DEFAULT_GLOBAL_TOOLCHAINS_FILE;
 		}
 
-		cliRequest.request.setGlobalToolchainsFile(globalToolchainsFile);
-		cliRequest.request.setUserToolchainsFile(userToolchainsFile);
+//		cliRequest.request.setGlobalToolchainsFile(globalToolchainsFile);
+//		cliRequest.request.setUserToolchainsFile(userToolchainsFile);
 
 	}
 
@@ -566,20 +550,7 @@ public class MavenCli {
 	// Customizations available via the CLI
 	//
 
-	protected TransferListener getConsoleTransferListener(boolean printResourceNames) {
-		return new ConsoleMavenTransferListener(System.out, printResourceNames);
-	}
-
-	protected TransferListener getBatchTransferListener() {
-		return new Slf4jMavenTransferListener();
-	}
-
 	protected void customizeContainer(PlexusContainer container) {
 	}
 
-	// protected ModelProcessor createModelProcessor( PlexusContainer container )
-	// throws ComponentLookupException
-	// {
-	// return container.lookup( ModelProcessor.class );
-	// }
 }
